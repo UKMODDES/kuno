@@ -50,23 +50,18 @@ class Robot:
         self.estop_client = self.robot.ensure_client("estop")
         self.estop_endpoint = EstopEndpoint(
             client=self.estop_client,
-            name="estop",
+            name="my-estop",
             estop_timeout=9.0)
         self.estop_endpoint.force_simple_setup()
+        self.estop_keep_alive = EstopKeepAlive(self.estop_endpoint)
 
-        print("a")
         # Acquire lease
         self.lease_client = self.robot.ensure_client(LeaseClient.default_service_name)
-        print(self.lease_client.list_leases())
-        print("b")
         self.lease = self.lease_client.acquire()
-        print(self.lease_client.list_leases())
-        print("c")
         self.lease_keep_alive = LeaseKeepAlive(
             self.lease_client,
             must_acquire=True,
             return_at_exit=True)
-        print("d")
 
         # Create clients
         self.robot_state_client = self.robot.ensure_client(
@@ -284,7 +279,6 @@ def main(argv):
         card_pos=[0.5, 0, 0.5],
         scene_pos=[3.0, 0, 0],)
 
-    estop_keep_alive, lease_keep_alive = robot.init()
     robot.run(options)
 
 if __name__ == '__main__':
