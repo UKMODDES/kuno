@@ -268,19 +268,50 @@ moves {
 
 moves {
 	type: "nod"
-	start_slice: 100
+	start_slice: 95
 }
 
 moves {
   type: "stow"
-  start_slice: 120
+  start_slice: 110
   requested_slices: 13
 }
 
+moves {
+  type: "step"
+  start_slice: 130
+  requested_slices: 13
+  step_params {
+    foot: LEG_FRONT_LEFT
+    offset {
+      x {
+      }
+      y {
+      }
+    }
+    second_foot: LEG_NO_LEG
+    mirror_x {
+    }
+    swing_waypoint {
+      x {
+      }
+      y {
+      }
+      z {
+      }
+    }
+    swing_height {
+    }
+    liftoff_velocity {
+    }
+    touchdown_velocity {
+    }
+  }
+}
 
 moves {
 	type: "sit"
-	start_slice: 180
+	start_slice: 220
 }
 
 

@@ -32,6 +32,8 @@ _LOGGER = logging.getLogger(__name__)
 # is subject to the terms and conditions of the Boston Dynamics Software
 # Development Kit License (20191101-BDSDK-SL).
 
+# https://dev.bostondynamics.com/choreography_protos/bosdyn/api/choreography_reference
+
 import os
 import argparse
 import sys
