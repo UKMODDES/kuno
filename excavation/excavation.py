@@ -167,6 +167,9 @@ class Robot:
         y = 0
         image_pos = geometry_pb2.Vec2(x, y)
 
+        # TEMPORARY
+        image_pos = None
+
         return image, image_pos
 
     def pick_up_ball(self, image, image_pos):
@@ -237,24 +240,16 @@ class Robot:
 
         initial_flat_body_transform = self.get_initial_flat_body_transform()
 
-        for i in range(self.options.num_iterations):
-            self.robot.logger.info("Starting iteration " + str(i))
+        iter_num = 0
+        while True:
+            self.robot.logger.info("Starting iteration " + str(iter_num))
+            iter_num+=1
 
-            self.robot.logger.info("Looking at card")
-            self.look_at_pos(initial_flat_body_transform, self.options.card_pos)
-
-            self.robot.logger.info("Starting countdown before taking photo of card", i)
-            countdown = 10
-            while countdown != 0:
-                self.robot.logger.info(str(countdown))
-                countdown-=1
-                time.sleep(1)
-
-            card_hue = self.get_card_hue()
             self.robot.logger.info("Looking at scene")
-            self.look_at_scene(initial_flat_body_transform, self.options.scene_pos)
-
-            image, image_pos = self.get_ball_image_pos(card_hue)
+            self.look_at_pos(initial_flat_body_transform, self.options.scene_pos)
+            image, image_pos = self.get_ball_image_pos(self.options.hue)
+            if image_pos is None:
+                break
             # self.pick_up_ball(image, image_pos)
             # self.return_to_initial_pos()
             # self.drop_ball()
@@ -263,10 +258,9 @@ class Robot:
         self.robot.power_off(cut_immediately=False, timeout_sec=20)
 
 class Options:
-    def __init__(self, num_iterations, image_source, card_pos, scene_pos):
-        self.num_iterations = num_iterations
+    def __init__(self, hue, image_source, scene_pos):
+        self.hue = hue
         self.image_source = image_source
-        self.card_pos = card_pos
         self.scene_pos = scene_pos
 
 def main(argv):
@@ -274,9 +268,8 @@ def main(argv):
 
     # Options for this challenge
     options = Options(
-        num_iterations=1,
+        hue=0,
         image_source="hand_color_image",
-        card_pos=[0.5, 0, 0.5],
         scene_pos=[3.0, 0, 0],)
 
     robot.run(options)
