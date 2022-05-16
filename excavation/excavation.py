@@ -39,6 +39,18 @@ from bosdyn.client.image import ImageClient
 from bosdyn.api import geometry_pb2, image_pb2, manipulation_api_pb2
 
 
+def get_trackbar():
+    hue_min = cv2.getTrackbarPos("Hue Min", "TrackedBars")
+    hue_max = cv2.getTrackbarPos("Hue Max", "TrackedBars")
+    sat_min = cv2.getTrackbarPos("Sat Min", "TrackedBars")
+    sat_max = cv2.getTrackbarPos("Sat Max", "TrackedBars")
+    val_min = cv2.getTrackbarPos("Val Min", "TrackedBars")
+    val_max = cv2.getTrackbarPos("Val Max", "TrackedBars")
+
+    lower = np.array([hue_min, sat_min, val_min])
+    upper = np.array([hue_max, sat_max, val_max])
+    return lower, upper
+
 class Robot:
     def __init__(self, hostname, username, pasword):
         self.sdk = bosdyn.client.create_standard_sdk("Excavation")
@@ -100,12 +112,12 @@ class Robot:
             gripper_command, gaze_command)
 
         # Send the request
-        self.robot.logger.info("Requesting gaze.")
+        print("Requesting gaze.")
         gaze_command_id = self.command_client.robot_command(synchro_command)
         block_until_arm_arrives(self.command_client, gaze_command_id, 4.0)
 
     def get_gripper_image(self):
-        self.robot.logger.info('Getting an image from: ' + self.options.image_source)
+        print('Getting an image from: ' + self.options.image_source)
         image_responses = self.image_client.get_image_from_sources([self.options.image_source])
 
         if len(image_responses) != 1:
@@ -127,44 +139,56 @@ class Robot:
 
         return image, img
 
-    def show_image(self, img):
-        image_title = "Showing image"
-        cv2.namedWindow(image_title)
-        cv2.imshow(image_title, img)
+    def get_ball_image_pos(self, hue):
+        print("Identifying ball for hue = " + str(hue))
+
+        image, img = self.get_gripper_image()
+
+        points = []
         while True:
+            # Apply mask, with values given by trackbar
+            lower, upper = get_trackbar()
+            hsv = cv2.cvtColor(img, cv2.COLOR_BGR2HSV)
+            mask = cv2.inRange(hsv, lower, upper)
+            result = cv2.bitwise_and(img, img, mask=mask)
+
+            bw = cv2.cvtColor(result, cv2.COLOR_BGR2GRAY)
+            _, thresh = cv2.threshold(bw, 127, 255, 0)
+            blur = cv2.GaussianBlur(thresh, (7,7),0)
+
+            contours, hierarchy = cv2.findContours(blur, cv2.RETR_TREE, cv2.CHAIN_APPROX_SIMPLE)
+            
+            #find centre of contours
+            points.clear()
+            for i in contours:
+                M = cv2.moments(i)
+                if M['m00'] != 0:
+                    cx = int(M['m10']/M['m00'])
+                    cy = int(M['m01']/M['m00'])
+                    cv2.circle(res, (cx, cy), 7, (0, 0, 255), -1)
+                    points.append([cx, cy])
+
+            cv2.drawContours(result, contours, -1, (0,255,0), 3)
+            cv2.imshow("TrackedBars", result)
             if cv2.waitKey(1) & 0xFF == ord('q'):
                 break
 
-    def get_ball_image_pos(self, hue):
-        self.robot.logger.info("Identifying ball for hue = " + str(hue))
+        if len(points) == 0:
+            return image, None
 
-        image, img = self.get_gripper_image()
-        blurred = cv2.GaussianBlur(img, (11, 11), 0)
-        hsv = cv2.cvtColor(blurred, cv2.COLOR_BGR2HSV)
-
-        self.show_image(hsv)
-
-        # TODO
-        x = 313#np.shape(hsv)[0] / 2
-        y = 266#np.shape(hsv)[1] / 2
-        image_pos = geometry_pb2.Vec2(x=x, y=y)
-
-        # TEMPORARY
-        # image_pos = [None]
+        point = points[0]
+        image_pos = geometry_pb2.Vec2(x=point[0], y=point[1])
 
         return image, image_pos
 
     def pick_up_ball(self, image, image_pos):
-        # TODO: Set a different offset_distance?
-        offset_distance = None
-
         # Build the proto
         walk_to = manipulation_api_pb2.WalkToObjectInImage(
             pixel_xy=image_pos,
             transforms_snapshot_for_camera=image.shot.transforms_snapshot,
             frame_name_image_sensor=image.shot.frame_name_image_sensor,
             camera_model=image.source.pinhole,
-            offset_distance=offset_distance
+            offset_distance=None
         )
 
         # Ask the robot to pick up the object
@@ -191,7 +215,7 @@ class Robot:
             if response.current_state == manipulation_api_pb2.MANIP_STATE_DONE:
                 break
 
-        self.robot.logger.info("Finished picking up object")
+        print("Finished picking up object")
 
     def return_to_initial_pos(self):
         # TODO
@@ -203,31 +227,31 @@ class Robot:
 
     def run(self, options):
         self.options = options
-        self.robot.logger.info("Powering on")
+        print("Powering on")
         self.robot.power_on(timeout_sec=20)
         if not self.robot.is_powered_on():
-            self.robot.logger.info("Failed to power on")
+            print("Failed to power on")
             return False
-        self.robot.logger.info("Robot powered on.")
+        print("Robot powered on.")
 
-        self.robot.logger.info("Standing up")
+        print("Standing up")
         self.command_client = self.robot.ensure_client(RobotCommandClient.default_service_name)
         blocking_stand(self.command_client, timeout_sec=10)
 
-        self.robot.logger.info("Unstowing arm")
+        print("Unstowing arm")
         unstow = RobotCommandBuilder.arm_ready_command()
         unstow_command_id = self.command_client.robot_command(unstow)
-        self.robot.logger.info("Unstow command issued, blocking until complete")
+        print("Unstow command issued, blocking until complete")
         block_until_arm_arrives(self.command_client, unstow_command_id, 3.0)
 
         initial_flat_body_transform = self.get_initial_flat_body_transform()
 
         iter_num = 0
         while True:
-            self.robot.logger.info("Starting iteration " + str(iter_num))
+            print("Starting iteration " + str(iter_num))
             iter_num+=1
 
-            self.robot.logger.info("Looking at scene")
+            print("Looking at scene")
             self.look_at_pos(initial_flat_body_transform, self.options.scene_pos)
             time.sleep(1)
             image, image_pos = self.get_ball_image_pos(self.options.hue)
@@ -237,7 +261,7 @@ class Robot:
             # self.return_to_initial_pos()
             # self.drop_ball()
 
-        self.robot.logger.info("Powering down")
+        print("Powering down")
         self.robot.power_off(cut_immediately=False, timeout_sec=20)
 
 class Options:
@@ -253,7 +277,7 @@ def main(argv):
     options = Options(
         hue=0,
         image_source="hand_color_image",
-        scene_pos=[1.0, 0, 0],)
+        scene_pos=[1.5, 0, 0],)
 
     robot.run(options)
 
