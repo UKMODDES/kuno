@@ -76,13 +76,13 @@ def main(argv):
     # Create a lease and lease keep-alive so we can issue commands. A lease is required to execute
     # a choreographed sequence.
     lease_client = robot.ensure_client(LeaseClient.default_service_name)
-    lease = lease_client.acquire()
+    lease = lease_client.take()
     lk = LeaseKeepAlive(lease_client)
 
     # Create the client for the Choreography service.
     choreography_client = robot.ensure_client(ChoreographyClient.default_service_name)
 
-    choreography_filepath = "dance.csq"
+    choreography_filepath = "routine.csq" #"dance.csq"
     try:
         choreography = load_choreography_sequence_from_txt_file(choreography_filepath)
     except Exception as execp:
@@ -111,8 +111,8 @@ def main(argv):
     sequences_on_robot = choreography_client.list_all_sequences()
     print('Sequence uploaded. All sequences on the robot:\n{}'.format('\n'.join(
         sequences_on_robot.known_sequences)))
-    if options.upload_only:
-        return True
+    # if options.upload_only:
+    #     return True
 
     # If the routine was valid, then we can now execute the routine on robot.
     # Power on the robot. The robot can start from any position, since the Choreography Service can automatically
@@ -122,6 +122,7 @@ def main(argv):
     # First, get the name of the choreographed sequence that was uploaded to the robot to uniquely identify which
     # routine to perform.
     routine_name = choreography.name
+    # routine_name = "Demo_Dance"
     # Then, set a start time five seconds after the current time.
     client_start_time = time.time() + 5.0
     # Specify the starting slice of the choreography. We will set this to slice=0 so that the routine begins at
