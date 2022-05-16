@@ -47,25 +47,33 @@ class Robot:
         self.robot.time_sync.wait_for_sync()
 
         # Start estop
-        self.estop_client = robot.ensure_client("estop")
+        self.estop_client = self.robot.ensure_client("estop")
         self.estop_endpoint = EstopEndpoint(
             client=self.estop_client,
             name="estop",
             estop_timeout=9.0)
+        self.estop_endpoint.force_simple_setup()
 
+        print("a")
         # Acquire lease
-        self.lease_client = robot.ensure_client(LeaseClient.default_service_name)
+        self.lease_client = self.robot.ensure_client(LeaseClient.default_service_name)
+        print(self.lease_client.list_leases())
+        print("b")
+        self.lease = self.lease_client.acquire()
+        print(self.lease_client.list_leases())
+        print("c")
         self.lease_keep_alive = LeaseKeepAlive(
             self.lease_client,
             must_acquire=True,
             return_at_exit=True)
+        print("d")
 
         # Create clients
-        self.robot_state_client = robot.ensure_client(
+        self.robot_state_client = self.robot.ensure_client(
             RobotStateClient.default_service_name)
-        self.image_client = robot.ensure_client(
+        self.image_client = self.robot.ensure_client(
             ImageClient.default_service_name)
-        self.manipulation_api_client = robot.ensure_client(
+        self.manipulation_api_client = self.robot.ensure_client(
             ManipulationApiClient.default_service_name)
 
     def get_initial_flat_body_transform(self):
@@ -234,7 +242,7 @@ class Robot:
 
         initial_flat_body_transform = self.get_initial_flat_body_transform()
 
-        for i in range(self.num_iterations):
+        for i in range(self.options.num_iterations):
             self.robot.logger.info("Starting iteration " + str(i))
 
             self.robot.logger.info("Looking at card")
@@ -260,7 +268,7 @@ class Robot:
         self.robot.power_off(cut_immediately=False, timeout_sec=20)
 
 class Options:
-    def __init__(self, num_colors, image_source, card_pos, scene_pos):
+    def __init__(self, num_iterations, image_source, card_pos, scene_pos):
         self.num_iterations = num_iterations
         self.image_source = image_source
         self.card_pos = card_pos
@@ -271,11 +279,12 @@ def main(argv):
 
     # Options for this challenge
     options = Options(
-        num_colors=1,
+        num_iterations=1,
         image_source="hand_color_image",
         card_pos=[0.5, 0, 0.5],
         scene_pos=[3.0, 0, 0],)
 
+    estop_keep_alive, lease_keep_alive = robot.init()
     robot.run(options)
 
 if __name__ == '__main__':
