@@ -100,13 +100,13 @@ class Robot:
             gripper_command, gaze_command)
 
         # Send the request
-        robot.logger.info("Requesting gaze.")
-        gaze_command_id = command_client.robot_command(synchro_command)
-        block_until_arm_arrives(command_client, gaze_command_id, 4.0)
+        self.robot.logger.info("Requesting gaze.")
+        gaze_command_id = self.command_client.robot_command(synchro_command)
+        block_until_arm_arrives(self.command_client, gaze_command_id, 4.0)
 
     def get_gripper_image(self):
-        sef.robot.logger.info('Getting an image from: ' + self.options.image_source)
-        image_responses = image_client.get_image_from_sources([image_source])
+        self.robot.logger.info('Getting an image from: ' + self.options.image_source)
+        image_responses = self.image_client.get_image_from_sources([self.options.image_source])
 
         if len(image_responses) != 1:
             print('Got invalid number of images: ' + str(len(image_responses)))
@@ -132,25 +132,7 @@ class Robot:
         cv2.namedWindow(image_title)
         cv2.imshow(image_title, img)
         while True:
-            key = cv2.waitKey(1) & 0xFF
-            if key == ord('\n'):
-                break
-
-    def get_card_hue(self):
-        self.robot.logger.info("Identifying card hue")
-
-        image, img = self.get_gripper_image()
-        blurred = cv2.GaussianBlur(img, (11, 11), 0)
-        hsv = cv2.cvtColor(blurred, cv2.COLOR_BGR2HSV)
-
-        self.show_image(img)
-
-        image_title = "HSV image"
-        cv2.namedWindow(image_title)
-        cv2.imshow(image_title, hsv)
-        while True:
-            key = cv2.waitKey(1) & 0xFF
-            if key == ord('\n'):
+            if cv2.waitKey(1) & 0xFF == ord('q'):
                 break
 
     def get_ball_image_pos(self, hue):
@@ -160,15 +142,15 @@ class Robot:
         blurred = cv2.GaussianBlur(img, (11, 11), 0)
         hsv = cv2.cvtColor(blurred, cv2.COLOR_BGR2HSV)
 
-        self.show_image(img)
+        self.show_image(hsv)
 
         # TODO
-        x = 0
-        y = 0
-        image_pos = geometry_pb2.Vec2(x, y)
+        x = 313#np.shape(hsv)[0] / 2
+        y = 266#np.shape(hsv)[1] / 2
+        image_pos = geometry_pb2.Vec2(x=x, y=y)
 
         # TEMPORARY
-        image_pos = None
+        # image_pos = [None]
 
         return image, image_pos
 
@@ -190,7 +172,7 @@ class Robot:
             walk_to_object_in_image=walk_to)
 
         # Send the request
-        cmd_response = manipulation_api_client.manipulation_api_command(
+        cmd_response = self.manipulation_api_client.manipulation_api_command(
             manipulation_api_request=walk_to_request)
 
         # Get feedback from the robot
@@ -200,7 +182,7 @@ class Robot:
                 manipulation_cmd_id=cmd_response.manipulation_cmd_id)
 
             # Send the request
-            response = manipulation_api_client.manipulation_api_feedback_command(
+            response = self.manipulation_api_client.manipulation_api_feedback_command(
                 manipulation_api_feedback_request=feedback_request)
 
             print('Current state: ',
@@ -229,7 +211,7 @@ class Robot:
         self.robot.logger.info("Robot powered on.")
 
         self.robot.logger.info("Standing up")
-        self.command_client = robot.ensure_client(RobotCommandClient.default_service_name)
+        self.command_client = self.robot.ensure_client(RobotCommandClient.default_service_name)
         blocking_stand(self.command_client, timeout_sec=10)
 
         self.robot.logger.info("Unstowing arm")
@@ -247,10 +229,11 @@ class Robot:
 
             self.robot.logger.info("Looking at scene")
             self.look_at_pos(initial_flat_body_transform, self.options.scene_pos)
+            time.sleep(1)
             image, image_pos = self.get_ball_image_pos(self.options.hue)
             if image_pos is None:
                 break
-            # self.pick_up_ball(image, image_pos)
+            self.pick_up_ball(image, image_pos)
             # self.return_to_initial_pos()
             # self.drop_ball()
 
@@ -270,7 +253,7 @@ def main(argv):
     options = Options(
         hue=0,
         image_source="hand_color_image",
-        scene_pos=[3.0, 0, 0],)
+        scene_pos=[1.0, 0, 0],)
 
     robot.run(options)
 
