@@ -233,3 +233,33 @@ moves {
     pivot: PIVOT_FRONT
   }
 }
+
+
+moves {
+  type: "unstow"
+  start_slice: 35
+  requested_slices: 13
+}
+moves {
+	type: "nod"
+	start_slice: 48
+}
+moves {
+  type: "stow"
+  start_slice: 60
+  requested_slices: 13
+}
+moves {
+	type: "random_stretch"
+	start_slice: 75
+}
+moves {
+	type: "nod"
+	start_slice: 80
+}
+moves {
+	type: "sit"
+	start_slice: 85
+}
+
+
