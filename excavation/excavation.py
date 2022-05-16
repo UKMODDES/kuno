@@ -140,6 +140,8 @@ class Robot:
         blurred = cv2.GaussianBlur(img, (11, 11), 0)
         hsv = cv2.cvtColor(blurred, cv2.COLOR_BGR2HSV)
 
+        self.show_image(img)
+
         image_title = "HSV image"
         cv2.namedWindow(image_title)
         cv2.imshow(image_title, hsv)
@@ -154,6 +156,8 @@ class Robot:
         image, img = self.get_gripper_image()
         blurred = cv2.GaussianBlur(img, (11, 11), 0)
         hsv = cv2.cvtColor(blurred, cv2.COLOR_BGR2HSV)
+
+        self.show_image(img)
 
         # TODO
         x = 0
@@ -248,9 +252,9 @@ class Robot:
             self.look_at_scene(initial_flat_body_transform, self.options.scene_pos)
 
             image, image_pos = self.get_ball_image_pos(card_hue)
-            self.pick_up_ball(image, image_pos)
-            self.return_to_initial_pos()
-            self.drop_ball()
+            # self.pick_up_ball(image, image_pos)
+            # self.return_to_initial_pos()
+            # self.drop_ball()
 
         self.robot.logger.info("Powering down")
         self.robot.power_off(cut_immediately=False, timeout_sec=20)
