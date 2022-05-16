@@ -47,25 +47,28 @@ class Robot:
         self.robot.time_sync.wait_for_sync()
 
         # Start estop
-        self.estop_client = robot.ensure_client("estop")
+        self.estop_client = self.robot.ensure_client("estop")
         self.estop_endpoint = EstopEndpoint(
             client=self.estop_client,
-            name="estop",
+            name="my-estop",
             estop_timeout=9.0)
+        self.estop_endpoint.force_simple_setup()
+        self.estop_keep_alive = EstopKeepAlive(self.estop_endpoint)
 
         # Acquire lease
-        self.lease_client = robot.ensure_client(LeaseClient.default_service_name)
+        self.lease_client = self.robot.ensure_client(LeaseClient.default_service_name)
+        self.lease = self.lease_client.acquire()
         self.lease_keep_alive = LeaseKeepAlive(
             self.lease_client,
             must_acquire=True,
             return_at_exit=True)
 
         # Create clients
-        self.robot_state_client = robot.ensure_client(
+        self.robot_state_client = self.robot.ensure_client(
             RobotStateClient.default_service_name)
-        self.image_client = robot.ensure_client(
+        self.image_client = self.robot.ensure_client(
             ImageClient.default_service_name)
-        self.manipulation_api_client = robot.ensure_client(
+        self.manipulation_api_client = self.robot.ensure_client(
             ManipulationApiClient.default_service_name)
 
     def get_initial_flat_body_transform(self):
@@ -97,13 +100,13 @@ class Robot:
             gripper_command, gaze_command)
 
         # Send the request
-        robot.logger.info("Requesting gaze.")
-        gaze_command_id = command_client.robot_command(synchro_command)
-        block_until_arm_arrives(command_client, gaze_command_id, 4.0)
+        self.robot.logger.info("Requesting gaze.")
+        gaze_command_id = self.command_client.robot_command(synchro_command)
+        block_until_arm_arrives(self.command_client, gaze_command_id, 4.0)
 
     def get_gripper_image(self):
-        sef.robot.logger.info('Getting an image from: ' + self.options.image_source)
-        image_responses = image_client.get_image_from_sources([image_source])
+        self.robot.logger.info('Getting an image from: ' + self.options.image_source)
+        image_responses = self.image_client.get_image_from_sources([self.options.image_source])
 
         if len(image_responses) != 1:
             print('Got invalid number of images: ' + str(len(image_responses)))
@@ -129,25 +132,7 @@ class Robot:
         cv2.namedWindow(image_title)
         cv2.imshow(image_title, img)
         while True:
-            key = cv2.waitKey(1) & 0xFF
-            if key == ord('\n'):
-                break
-
-    def get_card_hue(self):
-        self.robot.logger.info("Identifying card hue")
-
-        image, img = self.get_gripper_image()
-        blurred = cv2.GaussianBlur(img, (11, 11), 0)
-        hsv = cv2.cvtColor(blurred, cv2.COLOR_BGR2HSV)
-
-        self.show_image(img)
-
-        image_title = "HSV image"
-        cv2.namedWindow(image_title)
-        cv2.imshow(image_title, hsv)
-        while True:
-            key = cv2.waitKey(1) & 0xFF
-            if key == ord('\n'):
+            if cv2.waitKey(1) & 0xFF == ord('q'):
                 break
 
     def get_ball_image_pos(self, hue):
@@ -157,12 +142,15 @@ class Robot:
         blurred = cv2.GaussianBlur(img, (11, 11), 0)
         hsv = cv2.cvtColor(blurred, cv2.COLOR_BGR2HSV)
 
-        self.show_image(img)
+        self.show_image(hsv)
 
         # TODO
-        x = 0
-        y = 0
-        image_pos = geometry_pb2.Vec2(x, y)
+        x = 313#np.shape(hsv)[0] / 2
+        y = 266#np.shape(hsv)[1] / 2
+        image_pos = geometry_pb2.Vec2(x=x, y=y)
+
+        # TEMPORARY
+        # image_pos = [None]
 
         return image, image_pos
 
@@ -184,7 +172,7 @@ class Robot:
             walk_to_object_in_image=walk_to)
 
         # Send the request
-        cmd_response = manipulation_api_client.manipulation_api_command(
+        cmd_response = self.manipulation_api_client.manipulation_api_command(
             manipulation_api_request=walk_to_request)
 
         # Get feedback from the robot
@@ -194,7 +182,7 @@ class Robot:
                 manipulation_cmd_id=cmd_response.manipulation_cmd_id)
 
             # Send the request
-            response = manipulation_api_client.manipulation_api_feedback_command(
+            response = self.manipulation_api_client.manipulation_api_feedback_command(
                 manipulation_api_feedback_request=feedback_request)
 
             print('Current state: ',
@@ -223,7 +211,7 @@ class Robot:
         self.robot.logger.info("Robot powered on.")
 
         self.robot.logger.info("Standing up")
-        self.command_client = robot.ensure_client(RobotCommandClient.default_service_name)
+        self.command_client = self.robot.ensure_client(RobotCommandClient.default_service_name)
         blocking_stand(self.command_client, timeout_sec=10)
 
         self.robot.logger.info("Unstowing arm")
@@ -234,25 +222,18 @@ class Robot:
 
         initial_flat_body_transform = self.get_initial_flat_body_transform()
 
-        for i in range(self.num_iterations):
-            self.robot.logger.info("Starting iteration " + str(i))
+        iter_num = 0
+        while True:
+            self.robot.logger.info("Starting iteration " + str(iter_num))
+            iter_num+=1
 
-            self.robot.logger.info("Looking at card")
-            self.look_at_pos(initial_flat_body_transform, self.options.card_pos)
-
-            self.robot.logger.info("Starting countdown before taking photo of card", i)
-            countdown = 10
-            while countdown != 0:
-                self.robot.logger.info(str(countdown))
-                countdown-=1
-                time.sleep(1)
-
-            card_hue = self.get_card_hue()
             self.robot.logger.info("Looking at scene")
-            self.look_at_scene(initial_flat_body_transform, self.options.scene_pos)
-
-            image, image_pos = self.get_ball_image_pos(card_hue)
-            # self.pick_up_ball(image, image_pos)
+            self.look_at_pos(initial_flat_body_transform, self.options.scene_pos)
+            time.sleep(1)
+            image, image_pos = self.get_ball_image_pos(self.options.hue)
+            if image_pos is None:
+                break
+            self.pick_up_ball(image, image_pos)
             # self.return_to_initial_pos()
             # self.drop_ball()
 
@@ -260,10 +241,9 @@ class Robot:
         self.robot.power_off(cut_immediately=False, timeout_sec=20)
 
 class Options:
-    def __init__(self, num_colors, image_source, card_pos, scene_pos):
-        self.num_iterations = num_iterations
+    def __init__(self, hue, image_source, scene_pos):
+        self.hue = hue
         self.image_source = image_source
-        self.card_pos = card_pos
         self.scene_pos = scene_pos
 
 def main(argv):
@@ -271,10 +251,9 @@ def main(argv):
 
     # Options for this challenge
     options = Options(
-        num_colors=1,
+        hue=0,
         image_source="hand_color_image",
-        card_pos=[0.5, 0, 0.5],
-        scene_pos=[3.0, 0, 0],)
+        scene_pos=[1.0, 0, 0],)
 
     robot.run(options)
 
