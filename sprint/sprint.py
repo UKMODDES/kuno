@@ -33,15 +33,18 @@ class Options:
         self.password = password
 
 def main():
-    options = Options("192.168.80.3", "Kuno", "olumpickuno1")
+    options = Options("192.168.80.3", "Kuno", "olympickuno1")
     sdk = bosdyn.client.create_standard_sdk('RobotCommandMaster')
     robot = sdk.create_robot(options.hostname)
-    bosdyn.client.util.authenticate(options.username, options.password)
+    robot.authenticate(options.username, options.password)
 
     # Create estop
     estop_client = robot.ensure_client("estop")
     estop_endpoint = EstopEndpoint(client=estop_client, name="my_estop", estop_timeout=9.0)
-    
+    estop_endpoint.force_simple_setup()
+    estop_keep_alive = EstopKeepAlive(estop_endpoint)
+    print("HERE")
+
     # Create lease
     lease_client = robot.ensure_client(LeaseClient.default_service_name)
 
@@ -51,22 +54,21 @@ def main():
 
     distance = 2
 
-    with EstopKeepAlive(estop_endpoint):
-        with LeaseKeepAlive(lease_client, must_acquire=True, return_at_exit=True):
-            # Power on the robot and stand it up.
-            robot.time_sync.wait_for_sync()
-            robot.power_on()
-            blocking_stand(robot_command_client)
-            execute_sprint(distance)
-            robot_command_client.robot_command(RobotCommandBuilder.stop_command())
+    with LeaseKeepAlive(lease_client, must_acquire=True, return_at_exit=True):
+        # Power on the robot and stand it up.
+        robot.time_sync.wait_for_sync()
+        robot.power_on(timeout_sec=20)
+        blocking_stand(robot_command_client)
+        execute_sprint(robot_state_client, robot_command_client, distance)
+        robot_command_client.robot_command(RobotCommandBuilder.stop_command())
 
 
-def execute_sprint(distance):
+def execute_sprint(robot_state_client, robot_command_client, distance):
     transforms = robot_state_client.get_robot_state().kinematic_state.transforms_snapshot
 
     waypoints = [
-        math_helpers.SE2Pose(x=distance, y=0, angle=0)
-        math_helpers.SE2Pose(x=distance, y=0, angle=math.pi)
+        math_helpers.SE2Pose(x=distance, y=0, angle=0),
+        math_helpers.SE2Pose(x=distance, y=0, angle=math.pi),
         math_helpers.SE2Pose(x=0, y=0, angle=math.pi)
     ]
 
@@ -74,10 +76,12 @@ def execute_sprint(distance):
 
     for waypoint in waypoints:
         body_goal = body_initial * waypoint
-        robot_cmd = RobotCommandBuilder.synchro_se2_trajectory_command(
-            goal_se2 = body_goal,
-            frame_name = ODOM_FRAME_NAME
-            locomotion_hint = robot_command_pb2.HINT_SPEED_TROT)
+        robot_cmd = RobotCommandBuilder.synchro_se2_trajectory_point_command(
+            goal_x = body_goal.x,
+            goal_y = body_goal.y,
+            goal_heading = body_goal.angle,
+            frame_name = ODOM_FRAME_NAME,
+            locomotion_hint = robot_command_pb2.HINT_SPEED_SELECT_TROT)
 
         end_time = 10.0
         cmd_id = robot_command_client.robot_command(
@@ -95,7 +99,8 @@ def execute_sprint(distance):
             traj_feedback = mobility_feedback.se2_trajectory_feedback
             if (traj_feedback.status == traj_feedback.STATUS_AT_GOAL and
                     traj_feedback.body_movement_status == traj_feedback.BODY_STATUS_SETTLED):
-
+                print("Arrived at waypoint")
+                break
     return True
 
 if __name__ == "__main__":
