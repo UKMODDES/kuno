@@ -37,6 +37,7 @@ from bosdyn.client.image import ImageClient
 
 # Bosdyn api
 from bosdyn.api import geometry_pb2, image_pb2, manipulation_api_pb2
+from bosdyn.api import arm_command_pb2, robot_command_pb2, synchronized_command_pb2, trajectory_pb2
 
 
 def get_trackbar():
@@ -181,41 +182,134 @@ class Robot:
 
         return image, image_pos
 
-    def pick_up_ball(self, image, image_pos):
+    def add_grasp_constraint(self, grasp):
+        # Specify a vector alignment constraint
+
+        grasp.grasp_params.grasp_params_frame_name = VISION_FRAME_NAME
+
+        # Force the x-axis in the gripper frame to be aligned with -z in the visual frame
+        axis_on_gripper_ewrt_gripper = geometry_pb2.Vec3(x=1, y=0, z=0)
+        axis_to_align_with_ewrt_vo = geometry_pb2.Vec3(x=0, y=0, z=-1)
+        constraint = grasp.grasp_params.allowable_orientation.add()
+        constraint.vector_alignment_with_tolerance.axis_on_gripper_ewrt_gripper.CopyFrom(
+            axis_on_gripper_ewrt_gripper)
+        constraint.vector_alignment_with_tolerance.axis_to_align_with_ewrt_frame.CopyFrom(
+            axis_to_align_with_ewrt_vo)
+
+        # We'll take anything within about 10 degrees for top-down or horizontal grasps.
+        constraint.vector_alignment_with_tolerance.threshold_radians = 0.17
+
+
+    def grasp_ball(self, image, image_pos):
         # Build the proto
-        walk_to = manipulation_api_pb2.WalkToObjectInImage(
+        grasp = manipulation_api_pb2.PickObjectInImage(
             pixel_xy=image_pos,
             transforms_snapshot_for_camera=image.shot.transforms_snapshot,
             frame_name_image_sensor=image.shot.frame_name_image_sensor,
-            camera_model=image.source.pinhole,
-            offset_distance=None
-        )
+            camera_model=image.source.pinhole)
+
+        self.add_grasp_constraint(grasp)
 
         # Ask the robot to pick up the object
-        walk_to_request = manipulation_api_pb2.ManipulationApiRequest(
-            walk_to_object_in_image=walk_to)
+        grasp_request = manipulation_api_pb2.ManipulationApiRequest(
+            pick_object_in_image=grasp)
 
         # Send the request
-        cmd_response = self.manipulation_api_client.manipulation_api_command(
-            manipulation_api_request=walk_to_request)
+        cmd_response = manipulation_api_client.manipulation_api_command(
+            manipulation_api_request=grasp_request)
 
         # Get feedback from the robot
         while True:
-            time.sleep(0.25)
             feedback_request = manipulation_api_pb2.ManipulationApiFeedbackRequest(
                 manipulation_cmd_id=cmd_response.manipulation_cmd_id)
 
             # Send the request
-            response = self.manipulation_api_client.manipulation_api_feedback_command(
+            response = manipulation_api_client.manipulation_api_feedback_command(
                 manipulation_api_feedback_request=feedback_request)
 
             print('Current state: ',
                   manipulation_api_pb2.ManipulationFeedbackState.Name(response.current_state))
 
-            if response.current_state == manipulation_api_pb2.MANIP_STATE_DONE:
+            if response.current_state == manipulation_api_pb2.MANIP_STATE_GRASP_SUCCEEDED or response.current_state == manipulation_api_pb2.MANIP_STATE_GRASP_FAILED:
                 break
 
-        print("Finished picking up object")
+            time.sleep(0.25)
+
+        print('Finished grasp.')
+
+    def move_arm_up(self, frame):
+        move_up = 0.3
+        move_back = 0.5
+
+        robot_state = self.robot_state_client.get_robot_state()
+        initial_pose = get_a_tform_b(
+            robot_state.kinematic_state.transforms_snapshot,
+            ODOM_FRAME_NAME,
+            HAND_FRAME_NAME)
+
+        pose1 = initial_pose
+        pose1.z += move_up
+        pose1.quat = math_helpers.Quat()
+
+        rotated_dir = frame.rot.transform_point(-move_back, 0, 0)
+        pose2 = pose1
+        pose2.x -= rotated_dir.x
+        pose2.y -= rotated_dir.y
+
+        # Build the trajectory proto by combining the two points
+        hand_traj = trajectory_pb2.SE3Trajectory(points=[
+            trajectory_pb2.SE3TrajectoryPoint(
+                pose=pose1,
+                time_since_reference=seconds_to_duration(0.5),
+            ),
+            trajectory_pb2.SE3TrajectoryPoint(
+                pose=pose2,
+                time_since_reference=seconds_to_duration(1.0),
+            )
+        ])
+
+        # Build the command by taking the trajectory and specifying the frame it is expressed
+        # in.
+        #
+        # In this case, we want to specify the trajectory in the body's frame, so we set the
+        # root frame name to the flat body frame.
+        arm_cartesian_command = arm_command_pb2.ArmCartesianCommand.Request(
+            pose_trajectory_in_task=hand_traj, root_frame_name=GRAV_ALIGNED_BODY_FRAME_NAME)
+
+        # Pack everything up in protos.
+        arm_command = arm_command_pb2.ArmCommand.Request(
+            arm_cartesian_command=arm_cartesian_command)
+
+        synchronized_command = synchronized_command_pb2.SynchronizedCommand.Request(
+            arm_command=arm_command)
+
+        robot_command = robot_command_pb2.RobotCommand(
+            synchronized_command=synchronized_command)
+
+        # Keep the gripper closed the whole time.
+        robot_command = RobotCommandBuilder.claw_gripper_open_fraction_command(
+            0, build_on_command=robot_command)
+
+        print("Sending trajectory command")
+
+        # Send the trajectory to the robot.
+        cmd_id = self.command_client.robot_command(robot_command)
+
+        # Wait until the arm arrives at the goal.
+        while True:
+            feedback_resp = self.command_client.robot_command_feedback(cmd_id)
+            print(
+                'Distance to final point: ' + '{:.2f} meters'.format(
+                    feedback_resp.feedback.synchronized_feedback.arm_command_feedback.
+                    arm_cartesian_feedback.measured_pos_distance_to_goal) +
+                ', {:.2f} radians'.format(
+                    feedback_resp.feedback.synchronized_feedback.arm_command_feedback.
+                    arm_cartesian_feedback.measured_rot_distance_to_goal))
+
+            if feedback_resp.feedback.synchronized_feedback.arm_command_feedback.arm_cartesian_feedback.status == arm_command_pb2.ArmCartesianCommand.Feedback.STATUS_TRAJECTORY_COMPLETE:
+                print('Move complete.')
+                break
+            time.sleep(0.1)
 
     def return_to_initial_pos(self):
         # TODO
@@ -257,7 +351,8 @@ class Robot:
             image, image_pos = self.get_ball_image_pos(self.options.hue)
             if image_pos is None:
                 break
-            self.pick_up_ball(image, image_pos)
+            self.grasp_ball(image, image_pos)
+            self.move_arm_up(initial_flat_body_transform)
             # self.return_to_initial_pos()
             # self.drop_ball()
 
