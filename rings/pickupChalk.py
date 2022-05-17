@@ -31,6 +31,7 @@ from bosdyn.client.robot_command import (RobotCommandBuilder, RobotCommandClient
                                          block_until_arm_arrives, blocking_stand)
 from bosdyn.client.robot_state import RobotStateClient
 from bosdyn.client.manipulation_api_client import ManipulationApiClient
+from bosdyn.api.basic_command_pb2 import RobotCommandFeedbackStatus
 
 # Image clients
 from bosdyn.client.image import ImageClient
@@ -87,6 +88,8 @@ class Robot:
             ImageClient.default_service_name)
         self.manipulation_api_client = self.robot.ensure_client(
             ManipulationApiClient.default_service_name)
+        self.robot_command_client = self.robot.ensure_client(
+            RobotCommandClient.default_service_name)
 
     def get_initial_flat_body_transform(self):
         robot_state = self.robot_state_client.get_robot_state()
@@ -152,9 +155,9 @@ class Robot:
 
         cv2.createTrackbar("Hue Min", "TrackedBars", 0, 179, nothing)
         cv2.createTrackbar("Hue Max", "TrackedBars", 179, 179, nothing)
-        cv2.createTrackbar("Sat Min", "TrackedBars", 0, 255, nothing)
+        cv2.createTrackbar("Sat Min", "TrackedBars", 128, 255, nothing)
         cv2.createTrackbar("Sat Max", "TrackedBars", 255, 255, nothing)
-        cv2.createTrackbar("Val Min", "TrackedBars", 0, 255, nothing)
+        cv2.createTrackbar("Val Min", "TrackedBars", 128, 255, nothing)
         cv2.createTrackbar("Val Max", "TrackedBars", 255, 255, nothing)
 
         image, img = self.get_gripper_image()
@@ -185,9 +188,14 @@ class Robot:
 
             cv2.drawContours(result, contours, -1, (0,255,0), 3)
             cv2.imshow("TrackedBars", result)
-            if cv2.waitKey(1) & 0xFF == ord('q'):
+            key = cv2.waitKey(1) & 0xFF
+            if key == ord('a'):
+                break
+            if key == ord('q'):
+                points.clear()
                 break
 
+        print("Found {} points".format(len(points)))
         if len(points) == 0:
             return image, None
 
@@ -314,13 +322,47 @@ class Robot:
                 break
             time.sleep(0.1)
 
-    def return_to_initial_pos(self):
-        # TODO
-        pass
+    def move_body_back(self, frame):
+        print("Starting move backward")
+        frame_yaw = 2*np.arccos(frame.rot.w)
+        robot_cmd = RobotCommandBuilder.synchro_se2_trajectory_point_command(
+            goal_x = frame.x,
+            goal_y = frame.y,
+            goal_heading = frame_yaw,
+            frame_name = ODOM_FRAME_NAME)
+
+        end_time = 10.0
+        cmd_id = self.robot_command_client.robot_command(
+            lease=None,
+            command=robot_cmd,
+            end_time_secs=time.time() + end_time)
+
+        # Wait until the robot has reached the goal.
+        while True:
+            feedback = self.robot_command_client.robot_command_feedback(cmd_id)
+            mobility_feedback = feedback.feedback.synchronized_feedback.mobility_command_feedback
+            if mobility_feedback.status != RobotCommandFeedbackStatus.STATUS_PROCESSING:
+                print("Failed to reach the goal, stopping")
+                return False
+            traj_feedback = mobility_feedback.se2_trajectory_feedback
+            if (traj_feedback.status == traj_feedback.STATUS_AT_GOAL and
+                    traj_feedback.body_movement_status == traj_feedback.BODY_STATUS_SETTLED):
+                break
+        print("Finished moving backward")
 
     def drop_ball(self):
-        # TODO
-        pass
+        robot_command = RobotCommandBuilder.claw_gripper_open_fraction_command(1.0)
+        print("Sending gripper open command")
+        cmd_id = self.command_client.robot_command(robot_command)
+
+        # Wait until the arm arrives at the goal.
+        #while True:
+        #    feedback_resp = self.command_client.robot_command_feedback(cmd_id)
+        #    if feedback_resp.feedback.synchronized_feedback.arm_command_feedback.arm_cartesian_feedback.status == arm_command_pb2.ArmCartesianCommand.Feedback.STATUS_TRAJECTORY_COMPLETE:
+        #        break
+        #    time.sleep(0.1)
+        time.sleep(1)
+        print("Finished opening gripper")
 
     def run(self, options):
         self.options = options
@@ -350,14 +392,14 @@ class Robot:
 
             print("Looking at scene")
             self.look_at_pos(initial_flat_body_transform, self.options.scene_pos)
-            time.sleep(1)
+            time.sleep(5)
             image, image_pos = self.get_ball_image_pos(self.options.hue)
             if image_pos is None:
                 break
             self.grasp_ball(image, image_pos)
             self.move_arm_up(initial_flat_body_transform)
-            # self.return_to_initial_pos()
-            # self.drop_ball()
+            self.move_body_back(initial_flat_body_transform)
+            self.drop_ball()
 
         print("Powering down")
         self.robot.power_off(cut_immediately=False, timeout_sec=20)
