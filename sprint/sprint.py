@@ -52,7 +52,7 @@ def main():
     robot_state_client = robot.ensure_client(RobotStateClient.default_service_name)
     robot_command_client = robot.ensure_client(RobotCommandClient.default_service_name)
 
-    distance = 2
+    distance = 1
 
     with LeaseKeepAlive(lease_client, must_acquire=True, return_at_exit=True):
         # Power on the robot and stand it up.
@@ -68,8 +68,7 @@ def execute_sprint(robot_state_client, robot_command_client, distance):
 
     waypoints = [
         math_helpers.SE2Pose(x=distance, y=0, angle=0),
-        math_helpers.SE2Pose(x=distance, y=0, angle=math.pi),
-        math_helpers.SE2Pose(x=0, y=0, angle=math.pi)
+        math_helpers.SE2Pose(x=0, y=0, angle=0)
     ]
 
     body_initial = get_se2_a_tform_b(transforms, ODOM_FRAME_NAME, BODY_FRAME_NAME)
