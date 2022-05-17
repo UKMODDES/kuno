@@ -56,7 +56,7 @@ def get_trackbar():
     hue_min = hue_centre - hue_margin/2
     if hue_min < 0:
         hue_min += 180
-    hue_max_default = hue_centre + hue_margin/2
+    hue_max = hue_centre + hue_margin/2
     if hue_max > 180:
         hue_max -= 180
 
@@ -161,14 +161,14 @@ class Robot:
         cv2.namedWindow("TrackedBars")
         cv2.resizeWindow("TrackedBars", 640, 240)
 
-        hue_margin_default = 40
+        hue_margin_default = 20
 
         cv2.createTrackbar("Hue Centre", "TrackedBars", hue, 179, nothing)
         cv2.createTrackbar("Hue Margin", "TrackedBars", hue_margin_default, 90, nothing)
         cv2.createTrackbar("Sat Min", "TrackedBars", 50, 255, nothing)
         cv2.createTrackbar("Sat Max", "TrackedBars", 255, 255, nothing)
-        cv2.createTrackbar("Val Min", "TrackedBars", 128, 255, nothing)
-        cv2.createTrackbar("Val Max", "TrackedBars", 50, 255, nothing)
+        cv2.createTrackbar("Val Min", "TrackedBars", 50, 255, nothing)
+        cv2.createTrackbar("Val Max", "TrackedBars", 255, 255, nothing)
 
         image, img = self.get_gripper_image()
 
@@ -196,7 +196,7 @@ class Robot:
 
             bw = cv2.cvtColor(result, cv2.COLOR_BGR2GRAY)
             _, thresh = cv2.threshold(bw, 127, 255, 0)
-            blur = cv2.GaussianBlur(thresh, (7,7),0)
+            blur = cv2.GaussianBlur(thresh, (25,25),0)
 
             contours, hierarchy = cv2.findContours(blur, cv2.RETR_TREE, cv2.CHAIN_APPROX_SIMPLE)
             
@@ -216,7 +216,7 @@ class Robot:
             if key == ord('a'):
                 break
             if key == ord('q'):
-                points.clear()
+                return None, None
                 break
 
         print("Found {} points".format(len(points)))
@@ -296,7 +296,14 @@ class Robot:
             BODY_FRAME_NAME,
             HAND_FRAME_NAME)
 
-        pose1 = math_helpers.SE3Pose(x=0.8, y=0, z=0.3, rot=initial_pose.rot)
+        rot = math_helpers.Quat()
+        pitch = -0.1
+        rot.x = 0
+        rot.y = np.sin(pitch/2)
+        rot.z = 0
+        rot.w = np.cos(pitch/2)
+
+        pose1 = math_helpers.SE3Pose(x=0.5, y=0, z=0.45, rot=rot)
 
         # Build the trajectory proto by combining the two points
         hand_traj = trajectory_pb2.SE3Trajectory(points=[
@@ -357,11 +364,13 @@ class Robot:
             HAND_FRAME_NAME)
 
         rot = math_helpers.Quat()
-        pitch = -np.pi/4
+        pitch = 0.2
         rot.x = 0
         rot.y = np.sin(pitch/2)
         rot.z = 0
         rot.w = np.cos(pitch/2)
+
+        move_dist = 0.4
 
         pose1 = math_helpers.SE3Pose(
             x=initial_pose.x,
@@ -375,17 +384,17 @@ class Robot:
             z=initial_pose.z + move_dist/np.sqrt(2),
             rot=rot)
 
+        speed = 1.0
+        vel = math_helpers.SE3Velocity(
+            lin_x = speed*np.cos(-pitch), lin_y=0, lin_z=speed*np.sin(-pitch), ang_x=0, ang_y=0, ang_z=0)
+
         # Build the trajectory proto by combining the two points
-        hand_traj = trajectory_pb2.SE3Trajectory(points=[
-            trajectory_pb2.SE3TrajectoryPoint(
-                pose=pose1.to_proto(),
-                time_since_reference=seconds_to_duration(0.0)
-            ),
-            trajectory_pb2.SE3TrajectoryPoint(
-                pose=pose2.to_proto(),
-                time_since_reference=seconds_to_duration(1.0)
-            )
-        ])
+        hand_traj_point = trajectory_pb2.SE3TrajectoryPoint(
+            pose=pose2.to_proto(),
+            velocity=vel.to_proto(),
+            time_since_reference=seconds_to_duration(0.1)
+        )
+        hand_traj = trajectory_pb2.SE3Trajectory(points=[hand_traj_point])
 
         # Build the command by taking the trajectory and specifying the frame it is expressed
         # in.
@@ -460,15 +469,19 @@ class Robot:
             self.look_at_pos(initial_flat_body_transform, self.options.scene_pos)
             time.sleep(5)
             image, image_pos = self.get_ball_image_pos(self.options.hue)
-            if image_pos is None:
+            if image is None:
                 break
-            success = self.grasp_ball(image, image_pos)
-            if success:
-                self.move_arm_up(initial_flat_body_transform)
-                self.throw_ball()
-            else:
-                print("Failed to pickup ball, trying again")
+            if image_pos is None:
+                print("Failed to find any balls, trying again")
                 iter_num-=1
+                continue
+            success = self.grasp_ball(image, image_pos)
+            if not success:
+                print("Failed to grasp object, trying again")
+                iter_num-=1
+                continue
+            self.move_arm_up(initial_flat_body_transform)
+            self.throw_ball()
 
         print("Powering down")
         self.robot.power_off(cut_immediately=False, timeout_sec=20)
@@ -479,17 +492,20 @@ class Options:
         self.image_source = image_source
         self.scene_pos = scene_pos
 
-def main(argv):
+def main():
     robot = Robot("192.168.80.3", "Kuno", "olympickuno1")
 
     # Options for this challenge
     options = Options(
         hue=0,
         image_source="hand_color_image",
-        scene_pos=[1, 0, 0],)
+        scene_pos=[1.2, 0, 0],)
 
     robot.run(options)
 
 if __name__ == '__main__':
-    if not main(sys.argv[1:]):
+    try:
+        main()
+    except Exception as e:
+        print("{}".format(e))
         sys.exit(1)

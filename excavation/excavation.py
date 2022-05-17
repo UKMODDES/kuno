@@ -56,7 +56,7 @@ def get_trackbar():
     hue_min = hue_centre - hue_margin/2
     if hue_min < 0:
         hue_min += 180
-    hue_max_default = hue_centre + hue_margin/2
+    hue_max = hue_centre + hue_margin/2
     if hue_max > 180:
         hue_max -= 180
 
@@ -161,14 +161,14 @@ class Robot:
         cv2.namedWindow("TrackedBars")
         cv2.resizeWindow("TrackedBars", 640, 240)
 
-        hue_margin_default = 40
+        hue_margin_default = 20
 
         cv2.createTrackbar("Hue Centre", "TrackedBars", hue, 179, nothing)
         cv2.createTrackbar("Hue Margin", "TrackedBars", hue_margin_default, 90, nothing)
         cv2.createTrackbar("Sat Min", "TrackedBars", 50, 255, nothing)
         cv2.createTrackbar("Sat Max", "TrackedBars", 255, 255, nothing)
-        cv2.createTrackbar("Val Min", "TrackedBars", 128, 255, nothing)
-        cv2.createTrackbar("Val Max", "TrackedBars", 50, 255, nothing)
+        cv2.createTrackbar("Val Min", "TrackedBars", 50, 255, nothing)
+        cv2.createTrackbar("Val Max", "TrackedBars", 255, 255, nothing)
 
         image, img = self.get_gripper_image()
 
@@ -216,12 +216,13 @@ class Robot:
             if key == ord('a'):
                 break
             if key == ord('q'):
-                points.clear()
+                return None, None
                 break
+            break
 
         print("Found {} points".format(len(points)))
         if len(points) == 0:
-            return image, None
+            return None, None
 
         point = points[0]
         image_pos = geometry_pb2.Vec2(x=point[0], y=point[1])
@@ -358,7 +359,7 @@ class Robot:
             goal_heading = frame_yaw,
             frame_name = ODOM_FRAME_NAME)
 
-        end_time = 10.0
+        end_time = 20.0
         cmd_id = self.robot_command_client.robot_command(
             lease=None,
             command=robot_cmd,
@@ -421,16 +422,19 @@ class Robot:
             self.look_at_pos(initial_flat_body_transform, self.options.scene_pos)
             time.sleep(5)
             image, image_pos = self.get_ball_image_pos(self.options.hue)
-            if image_pos is None:
+            if image is None:
                 break
+            if image_pos is None:
+                print("Failed to find any balls, trying again")
+                iter_num-=1
+                continue
             success = self.grasp_ball(image, image_pos)
-            if success:
-                self.move_arm_up(initial_flat_body_transform)
-                self.move_body_back(initial_flat_body_transform)
-                self.drop_ball()
-            else:
+            if not success:
                 print("Failed to pickup ball, trying again")
                 iter_num-=1
+            self.move_arm_up(initial_flat_body_transform)
+            self.move_body_back(initial_flat_body_transform)
+            self.drop_ball()
 
         print("Powering down")
         self.robot.power_off(cut_immediately=False, timeout_sec=20)
@@ -441,17 +445,20 @@ class Options:
         self.image_source = image_source
         self.scene_pos = scene_pos
 
-def main(argv):
+def main():
     robot = Robot("192.168.80.3", "Kuno", "olympickuno1")
 
     # Options for this challenge
     options = Options(
-        hue=0,
+        hue=62,
         image_source="hand_color_image",
-        scene_pos=[1, 0, 0],)
+        scene_pos=[1.4, 0, 0],)
 
     robot.run(options)
 
 if __name__ == '__main__':
-    if not main(sys.argv[1:]):
+    try:
+        main()
+    except Exception as e:
+        print("{}".format(e))
         sys.exit(1)
