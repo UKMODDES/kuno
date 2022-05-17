@@ -24,7 +24,7 @@ from bosdyn.client.lease import LeaseClient, LeaseKeepAlive
 
 # Frames
 from bosdyn.client import math_helpers
-from bosdyn.client.frame_helpers import GRAV_ALIGNED_BODY_FRAME_NAME, ODOM_FRAME_NAME, VISION_FRAME_NAME, HAND_FRAME_NAME, get_a_tform_b
+from bosdyn.client.frame_helpers import GRAV_ALIGNED_BODY_FRAME_NAME, ODOM_FRAME_NAME, VISION_FRAME_NAME, HAND_FRAME_NAME, BODY_FRAME_NAME, get_a_tform_b
 
 # Command and state clients
 from bosdyn.client.robot_command import (RobotCommandBuilder, RobotCommandClient,
@@ -38,6 +38,8 @@ from bosdyn.client.image import ImageClient
 # Bosdyn api
 from bosdyn.api import geometry_pb2, image_pb2, manipulation_api_pb2
 from bosdyn.api import arm_command_pb2, robot_command_pb2, synchronized_command_pb2, trajectory_pb2
+
+from bosdyn.util import seconds_to_duration
 
 def nothing(i):
     pass
@@ -256,27 +258,16 @@ class Robot:
         robot_state = self.robot_state_client.get_robot_state()
         initial_pose = get_a_tform_b(
             robot_state.kinematic_state.transforms_snapshot,
-            ODOM_FRAME_NAME,
+            BODY_FRAME_NAME,
             HAND_FRAME_NAME)
 
-        pose1 = initial_pose
-        pose1.z += move_up
-        pose1.quat = math_helpers.Quat()
-
-        rotated_dir = frame.rot.transform_point(-move_back, 0, 0)
-        pose2 = pose1
-        pose2.x -= rotated_dir[0]
-        pose2.y -= rotated_dir[1]
+        pose1 = math_helpers.SE3Pose(x=0.8, y=0, z=0.3, rot=initial_pose.rot)
 
         # Build the trajectory proto by combining the two points
         hand_traj = trajectory_pb2.SE3Trajectory(points=[
             trajectory_pb2.SE3TrajectoryPoint(
-                pose=pose1,
-                time_since_reference=seconds_to_duration(0.5),
-            ),
-            trajectory_pb2.SE3TrajectoryPoint(
-                pose=pose2,
-                time_since_reference=seconds_to_duration(1.0),
+                pose=pose1.to_proto(),
+                time_since_reference=seconds_to_duration(1.0)
             )
         ])
 
@@ -384,7 +375,7 @@ def main(argv):
     options = Options(
         hue=0,
         image_source="hand_color_image",
-        scene_pos=[1.5, 0, 0],)
+        scene_pos=[1, 0, 0],)
 
     robot.run(options)
 
