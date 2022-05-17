@@ -84,9 +84,10 @@ def main(argv):
     # Create the client for the Choreography service.
     choreography_client = robot.ensure_client(ChoreographyClient.default_service_name)
 
-    choreography_filepath = "routine.csq" #"dance.csq"
+    choreography_filepath = "dance.csq" #"dance.csq"  // routine.csq
     try:
-        choreography = load_choreography_sequence_from_txt_file(choreography_filepath)
+        choreography = load_choreography_sequence_from_txt_file("dance.csq")
+        choreography = load_choreography_sequence_from_txt_file("routine.csq")
     except Exception as execp:
         print("Failed to load choreography. Raised exception: " + str(execp))
         return True
@@ -94,7 +95,9 @@ def main(argv):
     # Once the choreography is loaded into a protobuf message, upload the routine to the robot. We set
     # non_strict_parsing to true so that the robot will automatically correct any errors it find in the routine.
     try:
-        upload_response = choreography_client.upload_choreography(choreography,
+        upload_response = choreography_client.upload_choreography(load_choreography_sequence_from_txt_file("dance.csq"),
+                                                                  non_strict_parsing=True)
+        upload_response = choreography_client.upload_choreography(load_choreography_sequence_from_txt_file("routine.csq"),
                                                                   non_strict_parsing=True)
     except UnauthenticatedError as err:
         print(
@@ -123,7 +126,7 @@ def main(argv):
 
     # First, get the name of the choreographed sequence that was uploaded to the robot to uniquely identify which
     # routine to perform.
-    routine_name = choreography.name
+    # routine_name = choreography.name
     
 
     # ### Preloaded samples
@@ -146,17 +149,16 @@ def main(argv):
 
 
     # Then, set a start time five seconds after the current time.
-    client_start_time = time.time() + 5.0
+    client_start_time = time.time() + 3.0
     # Specify the starting slice of the choreography. We will set this to slice=0 so that the routine begins at
     # the very beginning.
     start_slice = 0
     # Issue the command to the robot's choreography service.
 
+
     choreography_client.execute_choreography(choreography_name="lost",
                                              client_start_time=client_start_time,
                                              choreography_starting_slice=0)
-
-
 
     time.sleep(10)
     client_start_time = time.time() + 1.0
@@ -172,22 +174,71 @@ def main(argv):
 
     time.sleep(5)
     client_start_time = time.time() + 1.0
+    choreography_client.execute_choreography(choreography_name="Left Side Anticipation",
+                                             client_start_time=client_start_time,
+                                             choreography_starting_slice=0)
+
+    time.sleep(2)
+    client_start_time = time.time() + 1.0
+    choreography_client.execute_choreography(choreography_name="Hallway Turn Right",
+                                             client_start_time=client_start_time,
+                                             choreography_starting_slice=0)
+
+    time.sleep(5)
+    client_start_time = time.time() + 1.0
+    choreography_client.execute_choreography(choreography_name="Right Side Anticipation",
+                                             client_start_time=client_start_time,
+                                             choreography_starting_slice=0)
+
+    time.sleep(2)
+    client_start_time = time.time() + 1.0
+    choreography_client.execute_choreography(choreography_name="action",
+                                         client_start_time=client_start_time,
+                                         choreography_starting_slice=0)
+
+    time.sleep(5)
+    client_start_time = time.time() + 1.0
     choreography_client.execute_choreography(choreography_name="Backward Anticipation",
                                              client_start_time=client_start_time,
                                              choreography_starting_slice=0)
 
     time.sleep(2)
     client_start_time = time.time() + 1.0
+    choreography_client.execute_choreography(choreography_name="HallwayPushBall",
+                                             client_start_time=client_start_time,
+                                             choreography_starting_slice=0)
+
+    time.sleep(5)
+    client_start_time = time.time() + 1.0
+    choreography_client.execute_choreography(choreography_name="complete",
+                                     client_start_time=client_start_time,
+                                     choreography_starting_slice=0)
+
+    time.sleep(5)
+    client_start_time = time.time() + 1.0
     choreography_client.execute_choreography(choreography_name="Demo_Dance",
                                              client_start_time=client_start_time,
                                              choreography_starting_slice=0)
 
-
     time.sleep(10)
-    client_start_time = time.time() + 1.0
+    client_start_time = time.time() + 2.0
+    choreography_client.execute_choreography(choreography_name="Kuno routine",
+                                             client_start_time=client_start_time,
+                                             choreography_starting_slice=start_slice)
+
+    # time.sleep(20)
+    # client_start_time = time.time() + 1.0
+    # choreography_client.execute_choreography(choreography_name="Upload Choreography Example",
+    #                                          client_start_time=client_start_time,
+    #                                          choreography_starting_slice=start_slice)
+
+    time.sleep(20)
+    client_start_time = time.time() + 2.0
     choreography_client.execute_choreography(choreography_name="Performance_Bow",
                                              client_start_time=client_start_time,
                                              choreography_starting_slice=0)
+
+
 
     # client_start_time = time.time() + 2.0
     # choreography_client.execute_choreography(choreography_name=routine_name,
