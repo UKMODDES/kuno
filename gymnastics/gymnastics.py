@@ -149,11 +149,12 @@ def main(argv):
 
 
     # Then, set a start time five seconds after the current time.
-    client_start_time = time.time() + 5.0
+    client_start_time = time.time() + 3.0
     # Specify the starting slice of the choreography. We will set this to slice=0 so that the routine begins at
     # the very beginning.
     start_slice = 0
     # Issue the command to the robot's choreography service.
+
 
     choreography_client.execute_choreography(choreography_name="lost",
                                              client_start_time=client_start_time,
@@ -185,6 +186,18 @@ def main(argv):
 
     time.sleep(5)
     client_start_time = time.time() + 1.0
+    choreography_client.execute_choreography(choreography_name="Right Side Anticipation",
+                                             client_start_time=client_start_time,
+                                             choreography_starting_slice=0)
+
+    time.sleep(2)
+    client_start_time = time.time() + 1.0
+    choreography_client.execute_choreography(choreography_name="action",
+                                         client_start_time=client_start_time,
+                                         choreography_starting_slice=0)
+
+    time.sleep(5)
+    client_start_time = time.time() + 1.0
     choreography_client.execute_choreography(choreography_name="Backward Anticipation",
                                              client_start_time=client_start_time,
                                              choreography_starting_slice=0)
@@ -194,6 +207,12 @@ def main(argv):
     choreography_client.execute_choreography(choreography_name="HallwayPushBall",
                                              client_start_time=client_start_time,
                                              choreography_starting_slice=0)
+
+    time.sleep(5)
+    client_start_time = time.time() + 1.0
+    choreography_client.execute_choreography(choreography_name="complete",
+                                     client_start_time=client_start_time,
+                                     choreography_starting_slice=0)
 
     time.sleep(5)
     client_start_time = time.time() + 1.0
@@ -207,17 +226,19 @@ def main(argv):
                                              client_start_time=client_start_time,
                                              choreography_starting_slice=start_slice)
 
-    time.sleep(20)
-    client_start_time = time.time() + 2.0
-    choreography_client.execute_choreography(choreography_name="Upload Choreography Example",
-                                             client_start_time=client_start_time,
-                                             choreography_starting_slice=start_slice)
+    # time.sleep(20)
+    # client_start_time = time.time() + 1.0
+    # choreography_client.execute_choreography(choreography_name="Upload Choreography Example",
+    #                                          client_start_time=client_start_time,
+    #                                          choreography_starting_slice=start_slice)
 
     time.sleep(20)
-    client_start_time = time.time() + 1.0
+    client_start_time = time.time() + 2.0
     choreography_client.execute_choreography(choreography_name="Performance_Bow",
                                              client_start_time=client_start_time,
                                              choreography_starting_slice=0)
+
+
 
     # client_start_time = time.time() + 2.0
     # choreography_client.execute_choreography(choreography_name=routine_name,
