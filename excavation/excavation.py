@@ -316,8 +316,17 @@ class Robot:
         pass
 
     def drop_ball(self):
-        # TODO
-        pass
+        robot_command = RobotCommandBuilder.claw_gripper_open_fraction_command(1.0)
+        print("Sending gripper open command")
+        cmd_id = self.command_client.robot_command(robot_command)
+
+        # Wait until the arm arrives at the goal.
+        while True:
+            feedback_resp = self.command_client.robot_command_feedback(cmd_id)
+            if feedback_resp.feedback.synchronized_feedback.arm_command_feedback.arm_cartesian_feedback.status == arm_command_pb2.ArmCartesianCommand.Feedback.STATUS_TRAJECTORY_COMPLETE:
+                break
+            time.sleep(0.1)
+        print("Finished opening gripper"
 
     def run(self, options):
         self.options = options
@@ -354,7 +363,7 @@ class Robot:
             self.grasp_ball(image, image_pos)
             self.move_arm_up(initial_flat_body_transform)
             # self.return_to_initial_pos()
-            # self.drop_ball()
+            self.drop_ball()
 
         print("Powering down")
         self.robot.power_off(cut_immediately=False, timeout_sec=20)
