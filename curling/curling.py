@@ -24,7 +24,7 @@ from bosdyn.client.lease import LeaseClient, LeaseKeepAlive
 
 # Frames
 from bosdyn.client import math_helpers
-from bosdyn.client.frame_helpers import GRAV_ALIGNED_BODY_FRAME_NAME, ODOM_FRAME_NAME, VISION_FRAME_NAME, HAND_FRAME_NAME, BODY_FRAME_NAME, get_a_tform_b
+from bosdyn.client.frame_helpers import get_se2_a_tform_b, GRAV_ALIGNED_BODY_FRAME_NAME, ODOM_FRAME_NAME, VISION_FRAME_NAME, HAND_FRAME_NAME, BODY_FRAME_NAME, get_a_tform_b
 
 # Command and state clients
 from bosdyn.client.robot_command import (RobotCommandBuilder, RobotCommandClient,
@@ -45,26 +45,14 @@ from bosdyn.util import seconds_to_duration
 def nothing(i):
     pass
 
-def get_trackbar():
-    hue_centre = cv2.getTrackbarPos("Hue Centre", "TrackedBars")
-    hue_margin = cv2.getTrackbarPos("Hue Margin", "TrackedBars")
-    sat_min = cv2.getTrackbarPos("Sat Min", "TrackedBars")
-    sat_max = cv2.getTrackbarPos("Sat Max", "TrackedBars")
-    val_min = cv2.getTrackbarPos("Val Min", "TrackedBars")
-    val_max = cv2.getTrackbarPos("Val Max", "TrackedBars")
+g_image_display = None
+g_image_click = None
 
-    hue_min = hue_centre - hue_margin/2
-    if hue_min < 0:
-        hue_min += 180
-    hue_max = hue_centre + hue_margin/2
-    if hue_max > 180:
-        hue_max -= 180
-
-    lower = np.array([hue_min, sat_min, val_min])
-    upper = np.array([hue_max, sat_max, val_max])
-
-    return lower, upper
-
+def click_callback(event, x, y, flags, param):
+    global g_image_display, g_image_click
+    if event == cv2.EVENT_LBUTTONUP:
+        g_image_click = (x, y)
+    
 class Robot:
     def __init__(self, hostname, username, pasword):
         self.sdk = bosdyn.client.create_standard_sdk("Excavation")
@@ -156,75 +144,26 @@ class Robot:
         return image, img
 
     def get_ball_image_pos(self, hue):
+        global g_image_click
         print("Identifying ball for hue = " + str(hue))
 
-        cv2.namedWindow("TrackedBars")
-        cv2.resizeWindow("TrackedBars", 640, 240)
-
-        hue_margin_default = 20
-
-        cv2.createTrackbar("Hue Centre", "TrackedBars", hue, 179, nothing)
-        cv2.createTrackbar("Hue Margin", "TrackedBars", hue_margin_default, 90, nothing)
-        cv2.createTrackbar("Sat Min", "TrackedBars", 50, 255, nothing)
-        cv2.createTrackbar("Sat Max", "TrackedBars", 255, 255, nothing)
-        cv2.createTrackbar("Val Min", "TrackedBars", 50, 255, nothing)
-        cv2.createTrackbar("Val Max", "TrackedBars", 255, 255, nothing)
+        image_title = "TrackedBars"
+        cv2.namedWindow(image_title)
+        cv2.resizeWindow(image_title, 640, 240)
+        cv2.setMouseCallback(image_title, click_callback)
 
         image, img = self.get_gripper_image()
 
-        points = []
-        while True:
-            # Apply mask, with values given by trackbar
-            lower, upper = get_trackbar()
-            hsv = cv2.cvtColor(img, cv2.COLOR_BGR2HSV)
-            if lower[0] > upper[0]:
-                lower1 = lower.copy()
-                upper1 = upper.copy()
-                upper1[0] = 179
-                mask1 = cv2.inRange(hsv, lower1, upper1)
+        global g_image_click, g_image_display
+        g_image_display = img
+        cv2.imshow(image_title, g_image_display)
 
-                lower2 = lower.copy()
-                lower2[0] = 0
-                upper2 = upper.copy()
-                mask2 = cv2.inRange(hsv, lower2, upper2)
-
-                mask = cv2.bitwise_or(mask1, mask2)
-                result = cv2.bitwise_and(img, img, mask=mask)
-            else:
-                mask = cv2.inRange(hsv, lower, upper)
-                result = cv2.bitwise_and(img, img, mask=mask)
-
-            bw = cv2.cvtColor(result, cv2.COLOR_BGR2GRAY)
-            _, thresh = cv2.threshold(bw, 127, 255, 0)
-            blur = cv2.GaussianBlur(thresh, (25,25),0)
-
-            contours, hierarchy = cv2.findContours(blur, cv2.RETR_TREE, cv2.CHAIN_APPROX_SIMPLE)
-            
-            #find centre of contours
-            points.clear()
-            for i in contours:
-                M = cv2.moments(i)
-                if M['m00'] != 0:
-                    cx = int(M['m10']/M['m00'])
-                    cy = int(M['m01']/M['m00'])
-                    cv2.circle(result, (cx, cy), 7, (0, 0, 255), -1)
-                    points.append([cx, cy])
-
-            cv2.drawContours(result, contours, -1, (0,255,0), 3)
-            cv2.imshow("TrackedBars", result)
-            key = cv2.waitKey(1) & 0xFF
-            if key == ord('a'):
-                break
-            if key == ord('q'):
+        g_image_click = None
+        while g_image_click is None:
+            if cv2.waitKey(1) & 0xFF == ord('q'):
                 return None, None
-                break
 
-        print("Found {} points".format(len(points)))
-        if len(points) == 0:
-            return image, None
-
-        point = points[0]
-        image_pos = geometry_pb2.Vec2(x=point[0], y=point[1])
+        image_pos = geometry_pb2.Vec2(x=g_image_click[0], y=g_image_click[1])
 
         return image, image_pos
 
@@ -264,6 +203,7 @@ class Robot:
         cmd_response = self.manipulation_api_client.manipulation_api_command(
             manipulation_api_request=grasp_request)
 
+        raycast_attempt = 0
         # Get feedback from the robot
         while True:
             feedback_request = manipulation_api_pb2.ManipulationApiFeedbackRequest(
@@ -281,6 +221,13 @@ class Robot:
 
             if response.current_state == manipulation_api_pb2.MANIP_STATE_GRASP_PLANNING_NO_SOLUTION or response.current_state == manipulation_api_pb2.MANIP_STATE_GRASP_FAILED:
                 return False
+
+            if response.current_state == manipulation_api_pb2.MANIP_STATE_ATTEMPTING_RAYCASTING or response.current_state == manipulation_api_pb2.MANIP_STATE_WALKING_TO_OBJECT:
+                raycast_attempt += 1
+                if raycast_attempt >= 20:
+                    print("Stopped after getting stuck on raycasting")
+                    return False
+
             time.sleep(0.25)
 
         print('Finished grasp.')
@@ -297,13 +244,13 @@ class Robot:
             HAND_FRAME_NAME)
 
         rot = math_helpers.Quat()
-        pitch = -0.1
+        pitch = -0.2
         rot.x = 0
         rot.y = np.sin(pitch/2)
         rot.z = 0
         rot.w = np.cos(pitch/2)
 
-        pose1 = math_helpers.SE3Pose(x=0.5, y=0, z=0.45, rot=rot)
+        pose1 = math_helpers.SE3Pose(x=0.55, y=0, z=0.45, rot=rot)
 
         # Build the trajectory proto by combining the two points
         hand_traj = trajectory_pb2.SE3Trajectory(points=[
@@ -335,7 +282,7 @@ class Robot:
         robot_command = RobotCommandBuilder.claw_gripper_open_fraction_command(
             0, build_on_command=robot_command)
 
-        print("Sending trajectory command")
+        print("Sending trajectory command for move arm up")
 
         # Send the trajectory to the robot.
         cmd_id = self.command_client.robot_command(robot_command)
@@ -364,13 +311,13 @@ class Robot:
             HAND_FRAME_NAME)
 
         rot = math_helpers.Quat()
-        pitch = 0.2
+        pitch = -0.1
         rot.x = 0
         rot.y = np.sin(pitch/2)
         rot.z = 0
         rot.w = np.cos(pitch/2)
 
-        move_dist = 0.4
+        move_dist = 0.0
 
         pose1 = math_helpers.SE3Pose(
             x=initial_pose.x,
@@ -392,7 +339,7 @@ class Robot:
         hand_traj_point = trajectory_pb2.SE3TrajectoryPoint(
             pose=pose2.to_proto(),
             velocity=vel.to_proto(),
-            time_since_reference=seconds_to_duration(0.1)
+            time_since_reference=seconds_to_duration(1.0)
         )
         hand_traj = trajectory_pb2.SE3Trajectory(points=[hand_traj_point])
 
@@ -418,26 +365,48 @@ class Robot:
         robot_command = RobotCommandBuilder.claw_gripper_open_fraction_command(
             1.0, build_on_command=robot_command)
 
-        print("Sending trajectory command")
+        print("Sending trajectory command for open")
 
         # Send the trajectory to the robot.
         cmd_id = self.command_client.robot_command(robot_command)
 
         # Wait until the arm arrives at the goal.
-        while True:
-            feedback_resp = self.command_client.robot_command_feedback(cmd_id)
-            print(
-                'Distance to final point: ' + '{:.2f} meters'.format(
-                    feedback_resp.feedback.synchronized_feedback.arm_command_feedback.
-                    arm_cartesian_feedback.measured_pos_distance_to_goal) +
-                ', {:.2f} radians'.format(
-                    feedback_resp.feedback.synchronized_feedback.arm_command_feedback.
-                    arm_cartesian_feedback.measured_rot_distance_to_goal))
+        time.sleep(1)
 
-            if feedback_resp.feedback.synchronized_feedback.arm_command_feedback.arm_cartesian_feedback.status == arm_command_pb2.ArmCartesianCommand.Feedback.STATUS_TRAJECTORY_COMPLETE:
-                print('Move complete.')
+    def run_forward(self):
+        transforms = self.robot_state_client.get_robot_state().kinematic_state.transforms_snapshot
+
+        print("Running forward")
+        distance_forward = 1.0
+        waypoint = math_helpers.SE2Pose(x=distance_forward, y=0, angle=0)
+
+        body_initial = get_se2_a_tform_b(transforms, ODOM_FRAME_NAME, BODY_FRAME_NAME)
+
+        body_goal = body_initial * waypoint
+        robot_cmd = RobotCommandBuilder.synchro_se2_trajectory_point_command(
+            goal_x = body_goal.x,
+            goal_y = body_goal.y,
+            goal_heading = body_goal.angle,
+            frame_name = ODOM_FRAME_NAME)
+
+        end_time = 10.0
+        cmd_id = self.robot_command_client.robot_command(
+            lease=None,
+            command=robot_cmd,
+            end_time_secs=time.time() + end_time)
+
+        # Wait until the robot has reached the goal.
+        while True:
+            feedback = self.robot_command_client.robot_command_feedback(cmd_id)
+            mobility_feedback = feedback.feedback.synchronized_feedback.mobility_command_feedback
+            if mobility_feedback.status != RobotCommandFeedbackStatus.STATUS_PROCESSING:
+                print("Failed to reach the goal, stopping")
+                return False
+            traj_feedback = mobility_feedback.se2_trajectory_feedback
+            if (traj_feedback.status == traj_feedback.STATUS_AT_GOAL and
+                    traj_feedback.body_movement_status == traj_feedback.BODY_STATUS_SETTLED):
+                print("Arrived at waypoint")
                 break
-            time.sleep(0.1)
 
     def run(self, options):
         self.options = options
@@ -482,6 +451,8 @@ class Robot:
                 continue
             self.move_arm_up(initial_flat_body_transform)
             self.throw_ball()
+            self.run_forward()
+            break
 
         print("Powering down")
         self.robot.power_off(cut_immediately=False, timeout_sec=20)
@@ -499,7 +470,7 @@ def main():
     options = Options(
         hue=0,
         image_source="hand_color_image",
-        scene_pos=[1.2, 0, 0],)
+        scene_pos=[1.0, 0, 0],)
 
     robot.run(options)
 
