@@ -46,23 +46,15 @@ def nothing(i):
     pass
 
 def get_trackbar():
-    hue_centre = cv2.getTrackbarPos("Hue Centre", "TrackedBars")
-    hue_margin = cv2.getTrackbarPos("Hue Margin", "TrackedBars")
+    hue_min = cv2.getTrackbarPos("Hue Min", "TrackedBars")
+    hue_max = cv2.getTrackbarPos("Hue Max", "TrackedBars")
     sat_min = cv2.getTrackbarPos("Sat Min", "TrackedBars")
     sat_max = cv2.getTrackbarPos("Sat Max", "TrackedBars")
     val_min = cv2.getTrackbarPos("Val Min", "TrackedBars")
     val_max = cv2.getTrackbarPos("Val Max", "TrackedBars")
 
-    hue_min = hue_centre - hue_margin/2
-    if hue_min < 0:
-        hue_min += 180
-    hue_max_default = hue_centre + hue_margin/2
-    if hue_max > 180:
-        hue_max -= 180
-
     lower = np.array([hue_min, sat_min, val_min])
     upper = np.array([hue_max, sat_max, val_max])
-
     return lower, upper
 
 class Robot:
@@ -161,10 +153,16 @@ class Robot:
         cv2.namedWindow("TrackedBars")
         cv2.resizeWindow("TrackedBars", 640, 240)
 
-        hue_margin_default = 40
+        hue_margin = 60
+        hue_min_default = hue - hue_margin/2
+        if hue_min_default < 0:
+            hue_min_default += 256
+        hue_max_default = hue + hue_margin/2
+        if hue_max_default > 255:
+            hue_max_default -= 256
 
-        cv2.createTrackbar("Hue Centre", "TrackedBars", hue, 179, nothing)
-        cv2.createTrackbar("Hue Margin", "TrackedBars", hue_margin_default, 90, nothing)
+        cv2.createTrackbar("Hue Min", "TrackedBars", 0, 179, nothing)
+        cv2.createTrackbar("Hue Max", "TrackedBars", 179, 179, nothing)
         cv2.createTrackbar("Sat Min", "TrackedBars", 50, 255, nothing)
         cv2.createTrackbar("Sat Max", "TrackedBars", 255, 255, nothing)
         cv2.createTrackbar("Val Min", "TrackedBars", 128, 255, nothing)
@@ -177,22 +175,8 @@ class Robot:
             # Apply mask, with values given by trackbar
             lower, upper = get_trackbar()
             hsv = cv2.cvtColor(img, cv2.COLOR_BGR2HSV)
-            if lower[0] > upper[0]:
-                lower1 = lower.copy()
-                upper1 = upper.copy()
-                upper1[0] = 179
-                mask1 = cv2.inRange(hsv, lower1, upper1)
-
-                lower2 = lower.copy()
-                lower2[0] = 0
-                upper2 = upper.copy()
-                mask2 = cv2.inRange(hsv, lower2, upper2)
-
-                mask = cv2.bitwise_or(mask1, mask2)
-                result = cv2.bitwise_and(img, img, mask=mask)
-            else:
-                mask = cv2.inRange(hsv, lower, upper)
-                result = cv2.bitwise_and(img, img, mask=mask)
+            mask = cv2.inRange(hsv, lower, upper)
+            result = cv2.bitwise_and(img, img, mask=mask)
 
             bw = cv2.cvtColor(result, cv2.COLOR_BGR2GRAY)
             _, thresh = cv2.threshold(bw, 127, 255, 0)
@@ -391,6 +375,9 @@ class Robot:
         time.sleep(1)
         print("Finished opening gripper")
 
+    def drawCircles(self):
+        pass
+
     def run(self, options):
         self.options = options
         print("Powering on")
@@ -426,6 +413,7 @@ class Robot:
             success = self.grasp_ball(image, image_pos)
             if success:
                 self.move_arm_up(initial_flat_body_transform)
+                self.drawCircles()
                 self.move_body_back(initial_flat_body_transform)
                 self.drop_ball()
             else:
