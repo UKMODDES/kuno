@@ -24,7 +24,7 @@ from bosdyn.client.lease import LeaseClient, LeaseKeepAlive
 
 # Frames
 from bosdyn.client import math_helpers
-from bosdyn.client.frame_helpers import GRAV_ALIGNED_BODY_FRAME_NAME, ODOM_FRAME_NAME, get_a_tform_b
+from bosdyn.client.frame_helpers import GRAV_ALIGNED_BODY_FRAME_NAME, ODOM_FRAME_NAME, VISION_FRAME_NAME, HAND_FRAME_NAME, BODY_FRAME_NAME, get_a_tform_b
 
 # Command and state clients
 from bosdyn.client.robot_command import (RobotCommandBuilder, RobotCommandClient,
@@ -39,6 +39,10 @@ from bosdyn.client.image import ImageClient
 from bosdyn.api import geometry_pb2, image_pb2, manipulation_api_pb2
 from bosdyn.api import arm_command_pb2, robot_command_pb2, synchronized_command_pb2, trajectory_pb2
 
+from bosdyn.util import seconds_to_duration
+
+def nothing(i):
+    pass
 
 def get_trackbar():
     hue_min = cv2.getTrackbarPos("Hue Min", "TrackedBars")
@@ -143,6 +147,16 @@ class Robot:
     def get_ball_image_pos(self, hue):
         print("Identifying ball for hue = " + str(hue))
 
+        cv2.namedWindow("TrackedBars")
+        cv2.resizeWindow("TrackedBars", 640, 240)
+
+        cv2.createTrackbar("Hue Min", "TrackedBars", 0, 179, nothing)
+        cv2.createTrackbar("Hue Max", "TrackedBars", 179, 179, nothing)
+        cv2.createTrackbar("Sat Min", "TrackedBars", 0, 255, nothing)
+        cv2.createTrackbar("Sat Max", "TrackedBars", 255, 255, nothing)
+        cv2.createTrackbar("Val Min", "TrackedBars", 0, 255, nothing)
+        cv2.createTrackbar("Val Max", "TrackedBars", 255, 255, nothing)
+
         image, img = self.get_gripper_image()
 
         points = []
@@ -166,7 +180,7 @@ class Robot:
                 if M['m00'] != 0:
                     cx = int(M['m10']/M['m00'])
                     cy = int(M['m01']/M['m00'])
-                    cv2.circle(res, (cx, cy), 7, (0, 0, 255), -1)
+                    cv2.circle(result, (cx, cy), 7, (0, 0, 255), -1)
                     points.append([cx, cy])
 
             cv2.drawContours(result, contours, -1, (0,255,0), 3)
@@ -215,7 +229,7 @@ class Robot:
             pick_object_in_image=grasp)
 
         # Send the request
-        cmd_response = manipulation_api_client.manipulation_api_command(
+        cmd_response = self.manipulation_api_client.manipulation_api_command(
             manipulation_api_request=grasp_request)
 
         # Get feedback from the robot
@@ -224,7 +238,7 @@ class Robot:
                 manipulation_cmd_id=cmd_response.manipulation_cmd_id)
 
             # Send the request
-            response = manipulation_api_client.manipulation_api_feedback_command(
+            response = self.manipulation_api_client.manipulation_api_feedback_command(
                 manipulation_api_feedback_request=feedback_request)
 
             print('Current state: ',
@@ -244,27 +258,16 @@ class Robot:
         robot_state = self.robot_state_client.get_robot_state()
         initial_pose = get_a_tform_b(
             robot_state.kinematic_state.transforms_snapshot,
-            ODOM_FRAME_NAME,
+            BODY_FRAME_NAME,
             HAND_FRAME_NAME)
 
-        pose1 = initial_pose
-        pose1.z += move_up
-        pose1.quat = math_helpers.Quat()
-
-        rotated_dir = frame.rot.transform_point(-move_back, 0, 0)
-        pose2 = pose1
-        pose2.x -= rotated_dir.x
-        pose2.y -= rotated_dir.y
+        pose1 = math_helpers.SE3Pose(x=0.8, y=0, z=0.3, rot=initial_pose.rot)
 
         # Build the trajectory proto by combining the two points
         hand_traj = trajectory_pb2.SE3Trajectory(points=[
             trajectory_pb2.SE3TrajectoryPoint(
-                pose=pose1,
-                time_since_reference=seconds_to_duration(0.5),
-            ),
-            trajectory_pb2.SE3TrajectoryPoint(
-                pose=pose2,
-                time_since_reference=seconds_to_duration(1.0),
+                pose=pose1.to_proto(),
+                time_since_reference=seconds_to_duration(1.0)
             )
         ])
 
@@ -381,7 +384,7 @@ def main(argv):
     options = Options(
         hue=0,
         image_source="hand_color_image",
-        scene_pos=[1.5, 0, 0],)
+        scene_pos=[1, 0, 0],)
 
     robot.run(options)
 

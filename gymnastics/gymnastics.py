@@ -32,6 +32,8 @@ _LOGGER = logging.getLogger(__name__)
 # is subject to the terms and conditions of the Boston Dynamics Software
 # Development Kit License (20191101-BDSDK-SL).
 
+# https://dev.bostondynamics.com/choreography_protos/bosdyn/api/choreography_reference
+
 import os
 import argparse
 import sys
@@ -122,16 +124,75 @@ def main(argv):
     # First, get the name of the choreographed sequence that was uploaded to the robot to uniquely identify which
     # routine to perform.
     routine_name = choreography.name
-    # routine_name = "Demo_Dance"
+    
+
+    # ### Preloaded samples
+    # Demo_Dance
+    # Backward Anticipation
+    # Demo_Dance
+    # Forward Anticipation
+    # Hallway Turn Left
+    # Hallway Turn Right
+    # HallwayPushBall
+    # Kuno routine
+    # Left Side Anticipation
+    # Performance_Bow
+    # Right Side Anticipation
+    # Safe Stand
+    # action
+    # complete
+    # lost
+
+
+
     # Then, set a start time five seconds after the current time.
     client_start_time = time.time() + 5.0
     # Specify the starting slice of the choreography. We will set this to slice=0 so that the routine begins at
     # the very beginning.
     start_slice = 0
     # Issue the command to the robot's choreography service.
-    choreography_client.execute_choreography(choreography_name=routine_name,
+
+    choreography_client.execute_choreography(choreography_name="lost",
                                              client_start_time=client_start_time,
-                                             choreography_starting_slice=start_slice)
+                                             choreography_starting_slice=0)
+
+
+
+    time.sleep(10)
+    client_start_time = time.time() + 1.0
+    choreography_client.execute_choreography(choreography_name="Forward Anticipation",
+                                             client_start_time=client_start_time,
+                                             choreography_starting_slice=0)
+
+    time.sleep(1)
+    client_start_time = time.time() + 1.0
+    choreography_client.execute_choreography(choreography_name="Hallway Turn Left",
+                                             client_start_time=client_start_time,
+                                             choreography_starting_slice=0)
+
+    time.sleep(5)
+    client_start_time = time.time() + 1.0
+    choreography_client.execute_choreography(choreography_name="Backward Anticipation",
+                                             client_start_time=client_start_time,
+                                             choreography_starting_slice=0)
+
+    time.sleep(2)
+    client_start_time = time.time() + 1.0
+    choreography_client.execute_choreography(choreography_name="Demo_Dance",
+                                             client_start_time=client_start_time,
+                                             choreography_starting_slice=0)
+
+
+    time.sleep(10)
+    client_start_time = time.time() + 1.0
+    choreography_client.execute_choreography(choreography_name="Performance_Bow",
+                                             client_start_time=client_start_time,
+                                             choreography_starting_slice=0)
+
+    # client_start_time = time.time() + 2.0
+    # choreography_client.execute_choreography(choreography_name=routine_name,
+    #                                          client_start_time=client_start_time,
+    #                                          choreography_starting_slice=start_slice)
 
     # Estimate how long the choreographed sequence will take, and sleep that long.
     total_choreography_slices = 0
