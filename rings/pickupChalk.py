@@ -153,12 +153,20 @@ class Robot:
         cv2.namedWindow("TrackedBars")
         cv2.resizeWindow("TrackedBars", 640, 240)
 
+        hue_margin = 60
+        hue_min_default = hue - hue_margin/2
+        if hue_min_default < 0:
+            hue_min_default += 256
+        hue_max_default = hue + hue_margin/2
+        if hue_max_default > 255:
+            hue_max_default -= 256
+
         cv2.createTrackbar("Hue Min", "TrackedBars", 0, 179, nothing)
         cv2.createTrackbar("Hue Max", "TrackedBars", 179, 179, nothing)
-        cv2.createTrackbar("Sat Min", "TrackedBars", 128, 255, nothing)
+        cv2.createTrackbar("Sat Min", "TrackedBars", 50, 255, nothing)
         cv2.createTrackbar("Sat Max", "TrackedBars", 255, 255, nothing)
         cv2.createTrackbar("Val Min", "TrackedBars", 128, 255, nothing)
-        cv2.createTrackbar("Val Max", "TrackedBars", 255, 255, nothing)
+        cv2.createTrackbar("Val Max", "TrackedBars", 50, 255, nothing)
 
         image, img = self.get_gripper_image()
 
@@ -252,12 +260,15 @@ class Robot:
             print('Current state: ',
                   manipulation_api_pb2.ManipulationFeedbackState.Name(response.current_state))
 
-            if response.current_state == manipulation_api_pb2.MANIP_STATE_GRASP_SUCCEEDED or response.current_state == manipulation_api_pb2.MANIP_STATE_GRASP_FAILED:
+            if response.current_state == manipulation_api_pb2.MANIP_STATE_GRASP_SUCCEEDED:
                 break
 
+            if response.current_state == manipulation_api_pb2.MANIP_STATE_GRASP_PLANNING_NO_SOLUTION or response.current_state == manipulation_api_pb2.MANIP_STATE_GRASP_FAILED:
+                return False
             time.sleep(0.25)
 
         print('Finished grasp.')
+        return True
 
     def move_arm_up(self, frame):
         move_up = 0.3
@@ -364,6 +375,9 @@ class Robot:
         time.sleep(1)
         print("Finished opening gripper")
 
+    def drawCircles(self):
+        pass
+
     def run(self, options):
         self.options = options
         print("Powering on")
@@ -396,10 +410,15 @@ class Robot:
             image, image_pos = self.get_ball_image_pos(self.options.hue)
             if image_pos is None:
                 break
-            self.grasp_ball(image, image_pos)
-            self.move_arm_up(initial_flat_body_transform)
-            self.move_body_back(initial_flat_body_transform)
-            self.drop_ball()
+            success = self.grasp_ball(image, image_pos)
+            if success:
+                self.move_arm_up(initial_flat_body_transform)
+                self.drawCircles()
+                self.move_body_back(initial_flat_body_transform)
+                self.drop_ball()
+            else:
+                print("Failed to pickup ball, trying again")
+                iter_num-=1
 
         print("Powering down")
         self.robot.power_off(cut_immediately=False, timeout_sec=20)
