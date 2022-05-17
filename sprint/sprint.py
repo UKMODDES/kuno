@@ -52,7 +52,7 @@ def main():
     robot_state_client = robot.ensure_client(RobotStateClient.default_service_name)
     robot_command_client = robot.ensure_client(RobotCommandClient.default_service_name)
 
-    distance = 1
+    distance = 50
 
     with LeaseKeepAlive(lease_client, must_acquire=True, return_at_exit=True):
         # Power on the robot and stand it up.
@@ -82,7 +82,7 @@ def execute_sprint(robot_state_client, robot_command_client, distance):
             frame_name = ODOM_FRAME_NAME,
             locomotion_hint = robot_command_pb2.HINT_SPEED_SELECT_TROT)
 
-        end_time = 10.0
+        end_time = 1000.0
         cmd_id = robot_command_client.robot_command(
             lease=None,
             command=robot_cmd,
