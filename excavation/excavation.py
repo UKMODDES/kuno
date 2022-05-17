@@ -185,7 +185,10 @@ class Robot:
 
             cv2.drawContours(result, contours, -1, (0,255,0), 3)
             cv2.imshow("TrackedBars", result)
+            if cv2.waitKey(1) & 0xFF == ord('a'):
+                break
             if cv2.waitKey(1) & 0xFF == ord('q'):
+                points.clear()
                 break
 
         if len(points) == 0:
@@ -314,9 +317,34 @@ class Robot:
                 break
             time.sleep(0.1)
 
-    def return_to_initial_pos(self):
-        # TODO
-        pass
+    def move_body_back(self, frame):
+        print("Starting move backward")
+        frame_yaw = 2*np.arcos(frame.rot.z)
+        robot_cmd = RobotCommandBuilder.synchro_se2_trajectory_point_command(
+            goal_x = frame.x,
+            goal_y = frame.y,
+            goal_heading = frame_yaw,
+            frame_name = ODOM_FRAME_NAME,
+            locomotion_hint = robot_command_pb2.HINT_SPEED_SELECT_AMBLE)
+
+        end_time = 10.0
+        cmd_id = robot_command_client.robot_command(
+            lease=None,
+            command=robot_cmd,
+            end_time_secs=time.time() + end_time)
+
+        # Wait until the robot has reached the goal.
+        while True:
+            feedback = robot_command_client.robot_command_feedback(cmd_id)
+            mobility_feedback = feedback.feedback.synchronized_feedback.mobility_command_feedback
+            if mobility_feedback.status != RobotCommandFeedbackStatus.STATUS_PROCESSING:
+                print("Failed to reach the goal, stopping")
+                return False
+            traj_feedback = mobility_feedback.se2_trajectory_feedback
+            if (traj_feedback.status == traj_feedback.STATUS_AT_GOAL and
+                    traj_feedback.body_movement_status == traj_feedback.BODY_STATUS_SETTLED):
+                break
+        print("Finished moving backward")
 
     def drop_ball(self):
         robot_command = RobotCommandBuilder.claw_gripper_open_fraction_command(1.0)
@@ -329,7 +357,7 @@ class Robot:
             if feedback_resp.feedback.synchronized_feedback.arm_command_feedback.arm_cartesian_feedback.status == arm_command_pb2.ArmCartesianCommand.Feedback.STATUS_TRAJECTORY_COMPLETE:
                 break
             time.sleep(0.1)
-        print("Finished opening gripper"
+        print("Finished opening gripper")
 
     def run(self, options):
         self.options = options
@@ -365,7 +393,7 @@ class Robot:
                 break
             self.grasp_ball(image, image_pos)
             self.move_arm_up(initial_flat_body_transform)
-            # self.return_to_initial_pos()
+            self.move_body_back(initial_flat_body_transform)
             self.drop_ball()
 
         print("Powering down")
